@@ -1,3 +1,4 @@
+
 import serial
 import numpy as np
 from tensorflow.keras.models import load_model
@@ -9,7 +10,7 @@ from sigfoxendpoint import send_message
 SERIAL_PORT = '/dev/ttyACM0'  # Update if needed
 BAUD_RATE = 115200
 WINDOW_SIZE = 300      # Or 360, depending on model
-MODEL_PATH = 'finaltry.keras'
+MODEL_PATH = 'cardionet1.0/ecg_model.keras'
 
 
 # --- INIT ---
