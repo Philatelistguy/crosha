@@ -1,5 +1,4 @@
 import serial
-from sigfoxendpoint import send_message
 import numpy as np
 from tensorflow.keras.models import load_model
 import time
@@ -10,6 +9,7 @@ import termios
 import tty
 import requests
 from pyfiglet import Figlet
+from colorama import Fore, Style,init
 
 # --- CONFIG ---
 SERIAL_PORT = '/dev/ttyACM0'
@@ -18,7 +18,7 @@ WINDOW_SIZE = 300
 MODEL_PATH = 'cardionet1.0/ecg_model.keras'
 THRESHOLD = 5
 CONFIDENCE_THRESHOLD = 0.70
-SPEECH_ENDPOINT = 'http://crosha-audio.local:5000/speak'  # Update to your TTS endpoint
+SPEECH_ENDPOINT = 'http://192.168.10.3:5000/speak'
 
 
 def speak(text):
@@ -27,7 +27,7 @@ def speak(text):
         resp = requests.post(SPEECH_ENDPOINT, json={'text': text})
         resp.raise_for_status()
     except Exception as e:
-        print(f"⚠️ Speech request failed: {e}")
+        print(f"{Fore.YELLOW}⚠️ Speech request failed: {e}{Style.RESET_ALL}")
 
 
 def print_banner():
@@ -35,12 +35,12 @@ def print_banner():
     Render ASCII art for 'CROSHA' and display a description box.
     """
     fig = Figlet(font='slant')
-    print(fig.renderText('CROSHA'))
+    print(Fore.CYAN + fig.renderText('CROSHA') + Style.RESET_ALL)
     desc = 'Cardiac Resuscitation, Oxygenation and Smart Health Assistant'
     border = '=' * len(desc)
-    print(border)
+    print(Fore.CYAN + border + Style.RESET_ALL)
     print(desc)
-    print(border)
+    print(Fore.CYAN + border + Style.RESET_ALL)
     print()
 
 
@@ -59,9 +59,9 @@ def wait_for_execution(ser):
         response = ser.readline().decode(errors='ignore').strip()
         if response == "CMD:executed":
             if monitor_ecg.verbose:
-                print("Arduino response: executed")
+                print(f"{Fore.BLUE}Arduino response: executed{Style.RESET_ALL}")
             break
-        time.sleep(0.1)
+        time.sleep(0.05)
 def monitor_ecg(model, ser, start_event, exit_event):
     buffer = []
     vf_vt_counter = 0
@@ -75,17 +75,17 @@ def monitor_ecg(model, ser, start_event, exit_event):
         line = ser.readline().decode().strip()
         if line.startswith("ECG:"):
             try:
-                val = float(line.split("ECG:")[1])  # Extract the value after "ECG:"
+                val = float(line.split("ECG:")[1])  
                 buffer.append(val)
                 if monitor_ecg.verbose:
-                    print(f"Read: {val:.3f} (buffer {len(buffer)}/{WINDOW_SIZE})")
+                    print(f"{Fore.GREEN}Read:{Style.RESET_ALL} {val:.3f} (buffer {len(buffer)}/{WINDOW_SIZE})")
             except (ValueError, IndexError):
                 if monitor_ecg.verbose:
-                    print(f"Ignored malformed data: '{line}'")
+                    print(f"{Fore.YELLOW}Ignored malformed data:{Style.RESET_ALL} '{line}'")
                 continue
         else:
             if monitor_ecg.verbose:
-                print(f"Ignored non-ECG data: '{line}'")
+                print(f"{Fore.YELLOW}Ignored non-ECG data:{Style.RESET_ALL} '{line}'")
             continue
 
         if len(buffer) >= WINDOW_SIZE:
@@ -99,7 +99,7 @@ def monitor_ecg(model, ser, start_event, exit_event):
             confidence = float(pred[idx])
             result = class_names[idx]
 
-            print(f"Predicted Class: {result}    Confidence: {confidence:.4f}")
+            print(f"Predicted Class: {Fore.MAGENTA}{result:<8}{Style.RESET_ALL} Confidence: {confidence:.4f}")
 
             if result in ['VF', 'VT'] and confidence > CONFIDENCE_THRESHOLD:
                 vf_vt_counter += 1
@@ -107,31 +107,39 @@ def monitor_ecg(model, ser, start_event, exit_event):
                     ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                     ser.write(('20\n').encode('utf-8'))
                     wait_for_execution(ser)
+                    speak("Starting shock preparation.")
+                    print(f"{Fore.YELLOW}💥 Shock preparation started.{Style.RESET_ALL}")
                     ser.write(('CMD:ECGSTART\n').encode('utf-8'))
                 elif vf_vt_counter == 2:
                     ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                     ser.write(('40\n').encode('utf-8'))
                     wait_for_execution(ser)
+                    speak("Increasing shock energy.")
+                    print(f"{Fore.YELLOW}⚠️ Increasing shock energy.{Style.RESET_ALL}")
                     ser.write(('CMD:ECGSTART\n').encode('utf-8'))
                 elif vf_vt_counter == 3:
                     ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                     ser.write(('60\n').encode('utf-8'))
                     wait_for_execution(ser)
+                    speak("Charging capacitors. Prepare for shock. Move away from the patient now.")
+                    print(f"{Fore.YELLOW}⚠️ Charging capacitors. Prepare for shock.{Style.RESET_ALL}")
                     ser.write(('CMD:ECGSTART\n').encode('utf-8'))
                 elif vf_vt_counter == 4:
                     ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                     ser.write(('80\n').encode('utf-8'))
                     wait_for_execution(ser)
+                    speak("Shock energy at 80%.")
+                    print(f"{Fore.YELLOW}⚠️ Shock energy at 80%.{Style.RESET_ALL}")
                     ser.write(('CMD:ECGSTART\n').encode('utf-8'))
                 elif vf_vt_counter == 5:
                     ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                     ser.write(('100\n').encode('utf-8'))
                     wait_for_execution(ser)
+                    speak("Shock energy at 100%. Delivering shock now!.")
+                    print(f"{Fore.RED}⚠️ Shock energy at 100%. DELIVERING SHOCK NOW.{Style.RESET_ALL}")
                     ser.write(('CMD:ECGSTART\n').encode('utf-8'))
 
-                print(f"⚠️ Consecutive VF/VT: {vf_vt_counter}/{THRESHOLD}")
-
-                speak("Preparing to shock patient.")
+                print(f"{Fore.YELLOW}⚠️ Consecutive VF/VT: {vf_vt_counter}/{THRESHOLD}{Style.RESET_ALL}")
             else:
                 vf_vt_counter = 0
                 ser.write(('0\n').encode('utf-8'))
@@ -141,16 +149,15 @@ def monitor_ecg(model, ser, start_event, exit_event):
                 ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
                 ser.write(('0\n').encode('utf-8'))
                 wait_for_execution(ser)
-                print("💥 SHOCK TRIGGERED! Patient unresponsive.")
-                speak("Shock triggered. Patient unresponsive.")
-                send_message("shock triggered")
+                print(f"{Fore.RED}⚠️ SHOCK TRIGGERED. Patient unresponsive.{Style.RESET_ALL}")
                 ser.write(('shock\n').encode('utf-8'))
                 wait_for_execution(ser)
-                print("💤 Shock delivered. Waiting for 5 seconds before resetting counter.")
-                print("🔄 Resetting shock counter.")
+                speak("Shock delivered successfully.")
+                print(f"{Fore.GREEN}💤 Shock delivered. Waiting before resetting counter.{Style.RESET_ALL}")
+                print(f"{Fore.CYAN}🔄 Resetting shock counter.{Style.RESET_ALL}")
                 vf_vt_counter = 0
                 ser.write(('CMD:ECGSTART\n').encode('utf-8'))
-                print("🔄 Resuming monitoring after shock.")
+                print(f"{Fore.GREEN}🔄 Resuming monitoring after shock.{Style.RESET_ALL}")                
                 speak("Resuming monitoring after shock.")
                 start_event.set()
 
@@ -166,16 +173,15 @@ def main():
     print("Loading model and serial port...")
     model = load_model(MODEL_PATH)
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    time.sleep(2)  # Wait for the serial connection to establish
+    time.sleep(2)  
     ser.flushInput()
     ser.write(('0\n').encode('utf-8'))
     wait_for_execution(ser)
     print("Initialization complete. Ready to monitor.\n")
     ser.write(('CMD:start\n').encode('utf-8'))
     wait_for_execution(ser)
-    speak("CROSHA is now ready for monitoring.")
-
-    print("Controls: [1] Start  [2] Stop  [3] Toggle Verbose  [4] Exit (press key anytime)\n")
+    speak("crawsha, is now ready for monitoring.")
+    print(f"{Fore.YELLOW}Controls:{Style.RESET_ALL} [1] Start  [2] Stop  [3] Toggle Verbose  [4] Exit (press key anytime)\n")
 
     start_event = threading.Event()
     exit_event = threading.Event()
@@ -197,31 +203,30 @@ def main():
                 continue
             if key == '1':
                 start_event.set()
-                print("🟢 Started monitoring.")
+                print(f"{Fore.GREEN}🟢 Started monitoring.{Style.RESET_ALL}")
                 ser.write(('0\n').encode('utf-8'))
                 wait_for_execution(ser)
                 ser.write(('CMD:ECGSTART\n').encode('utf-8'))
-                print(ser.readline().decode(errors='ignore').strip())
-                speak("Monitoring started.") #give a delay of 1 second before starting the monitoring
+                speak("Monitoring started.")
             elif key == '2':
                 start_event.clear()
                 vf_vt_counter = 0
                 ser.write(('0\n').encode('utf-8'))
                 wait_for_execution(ser)
                 ser.write(('CMD:ECGSTOP\n').encode('utf-8'))
-                print("🔴 Stopped monitoring.")
+                print(f"{Fore.RED}🔴 Stopped monitoring.{Style.RESET_ALL}")
                 speak("Monitoring stopped.")
             elif key == '3':
                 monitor_ecg.verbose = not monitor_ecg.verbose
                 state = 'enabled' if monitor_ecg.verbose else 'disabled'
-                print(f"📝 Verbose {state}.")
+                print(f"{Fore.BLUE}📝 Verbose {state}.{Style.RESET_ALL}")
                 speak(f"Verbose mode {state}.")
             elif key == '4':
                 ser.write('0\n'.encode('utf-8'))
                 wait_for_execution(ser)
                 ser.write(b'CMD:ECGSTOP\n')
-                print("Exiting...")
-                speak("Exiting CROSHA. Goodbye.")
+                print(f"{Fore.CYAN}Exiting...{Style.RESET_ALL}")
+                speak("Exiting crawsha. Goodbye.")
                 exit_event.set()
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
